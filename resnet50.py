@@ -6,7 +6,7 @@ import torch.nn.functional as F
 class Resnet(torch.nn.Module):
     def __init__(self):
         super(Resnet, self).__init__()
-        self.resnet = resnet50() 
+        self.resnet = resnet50(pretrained=True) 
         self.classifier = torch.nn.Linear(1000, 26)
         torch.nn.init.xavier_normal_(self.classifier.weight)
 

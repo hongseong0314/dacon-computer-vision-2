@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import cv2
 from tqdm import tqdm
 from PIL import Image
-
+import random
 import torch
 import torchvision.transforms as T
 
@@ -42,13 +42,24 @@ res_config = {
     'is_1d': False,
     'reshape_size': None,
     'BATCH_SIZE': BATCH_SIZE,
-    'epochs': 30,
+    'epochs': 60,
     'lr' : 1e-3,
     'CODER': 'resnet',
     'DatasetMNIST' : DatasetMNIST,
     'dirty_mnist_answer' : dirty_mnist_answer,
 }
 
+def seed_everything(seed):
+    random.seed(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
 if __name__ == '__main__':
+    seed_everything(np.random.randint(1, 5000))
     print("train resnet.........")
     train_and_predict(res_config)

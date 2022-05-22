@@ -44,20 +44,24 @@ def train_model(model_class, DatasetMNIST, dirty_mnist_answer, BATCH_SIZE, epoch
                 train_dataset,
                 batch_size = BATCH_SIZE,
                 shuffle = False,
+                num_workers = 8,
             )
             valid_data_loader = DataLoader(
                 valid_dataset,
                 batch_size = int(BATCH_SIZE / 2),
                 shuffle = False,
+                num_workers = 4,
             )
 
             # model setup
             model = model_class()
             model.to(device)
             optimizer = torch.optim.Adam(model.parameters(),lr = lr)
-            lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
-                                                        step_size = 5,
-                                                        gamma = 0.75)
+            # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
+            #                                             step_size = 5,
+            #                                             gamma = 0.75)
+            lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=1, 
+                                                                            eta_min=0.001, last_epoch=-1)                                       
             criterion = torch.nn.MultiLabelSoftMarginLoss()
 
             valid_acc_max = 0
