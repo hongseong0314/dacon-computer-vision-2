@@ -17,7 +17,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class EarlyStopping:
     """주어진 patience 이후로 validation loss가 개선되지 않으면 학습을 조기 중지"""
-    def __init__(self, patience=7, verbose=False, delta=0, path='checkpoint.pt'):
+    def __init__(self, patience=3, verbose=False, delta=0, path='checkpoint.pt'):
         """
         Args:
             patience (int): validation loss가 개선된 후 기다리는 기간
@@ -116,7 +116,7 @@ def train_model(model_class, DatasetMNIST, dirty_mnist_answer, BATCH_SIZE, epoch
             valid_acc_max = 0
 
             # train 시작
-            early_stopping = EarlyStopping(patience = 7, verbose = True)
+            early_stopping = EarlyStopping(patience=3, verbose = True)
 
             for epoch in range(epochs):
                 train_acc_list = []
@@ -180,17 +180,13 @@ def train_model(model_class, DatasetMNIST, dirty_mnist_answer, BATCH_SIZE, epoch
                 lr_scheduler.step()  
                 early_stopping(np.average(valid_losses), model)
 
-                if early_stopping.early_stop:
-                    print("Early stopping")
-                    break
-
                 # 모델 저장
                 if valid_acc_max < valid_acc:
                     valid_acc_max = valid_acc
                     best_model = model
                     create_directory("model")
                     # model_name_bagging_kfold_bestmodel_valid loss로 이름 지정
-                    best_model_name = "model/model_{}_{}_{}_{:.4f}.pth".format(CODER, b, fold_index, valid_loss.item())
+                    best_model_name = "model/model_{}_{}_{}_{:.4f}.pth".format(CODER, b, fold_index, valid_acc_max)
                     torch.save(model.state_dict(), best_model_name)
                     
                     if os.path.isfile(previse_name):
@@ -198,6 +194,10 @@ def train_model(model_class, DatasetMNIST, dirty_mnist_answer, BATCH_SIZE, epoch
 
                     # 갱신
                     previse_name = best_model_name
+                
+                if early_stopping.early_stop:
+                    print("Early stopping")
+                    break
             # 폴드별로 가장 좋은 모델 저장
             #best_models.append(best_model)
 
