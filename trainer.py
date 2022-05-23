@@ -1,4 +1,5 @@
 # trainer 함수
+from pickle import TRUE
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 import torch
@@ -13,6 +14,54 @@ from torchvision import transforms
 from tqdm import tqdm
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") 
+
+class EarlyStopping:
+    """주어진 patience 이후로 validation loss가 개선되지 않으면 학습을 조기 중지"""
+    def __init__(self, patience=7, verbose=False, delta=0, path='checkpoint.pt'):
+        """
+        Args:
+            patience (int): validation loss가 개선된 후 기다리는 기간
+                            Default: 7
+            verbose (bool): True일 경우 각 validation loss의 개선 사항 메세지 출력
+                            Default: False
+            delta (float): 개선되었다고 인정되는 monitered quantity의 최소 변화
+                            Default: 0
+            path (str): checkpoint저장 경로
+                            Default: 'checkpoint.pt'
+        """
+        self.patience = patience
+        self.verbose = verbose
+        self.counter = 0
+        self.best_score = None
+        self.early_stop = False
+        self.val_loss_min = np.Inf
+        self.delta = delta
+        self.path = path
+
+    def __call__(self, val_loss, model):
+
+        score = -val_loss
+
+        if self.best_score is None:
+            self.best_score = score
+            self.save_checkpoint(val_loss, model)
+        elif score < self.best_score + self.delta:
+            self.counter += 1
+            print(f'EarlyStopping counter: {self.counter} out of {self.patience}')
+            if self.counter >= self.patience:
+                self.early_stop = True
+        else:
+            self.best_score = score
+            self.save_checkpoint(val_loss, model)
+            self.counter = 0
+
+    def save_checkpoint(self, val_loss, model):
+        '''validation loss가 감소하면 모델을 저장한다.'''
+        if self.verbose:
+            print(f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
+        torch.save(model.state_dict(), self.path)
+        self.val_loss_min = val_loss
+
 
 def train_model(model_class, DatasetMNIST, dirty_mnist_answer, BATCH_SIZE, epochs, lr, is_1d = None, 
                 reshape_size = None, fold_num=4, CODER=None, 
@@ -36,14 +85,14 @@ def train_model(model_class, DatasetMNIST, dirty_mnist_answer, BATCH_SIZE, epoch
             test_answer  = dirty_mnist_answer.iloc[val_idx]
 
             #Dataset 정의
-            train_dataset = DatasetMNIST("dirty_mnist/train/", train_answer, 'train')
+            train_dataset = DatasetMNIST("dirty_mnist/train/", train_answer, 'train', mix_up=True)
             valid_dataset = DatasetMNIST("dirty_mnist/train/", test_answer, 'test')
 
             #DataLoader 정의
             train_data_loader = DataLoader(
                 train_dataset,
                 batch_size = BATCH_SIZE,
-                shuffle = False,
+                shuffle = True,
                 num_workers = 8,
             )
             valid_data_loader = DataLoader(
@@ -67,6 +116,8 @@ def train_model(model_class, DatasetMNIST, dirty_mnist_answer, BATCH_SIZE, epoch
             valid_acc_max = 0
 
             # train 시작
+            early_stopping = EarlyStopping(patience = 7, verbose = True)
+
             for epoch in range(epochs):
                 train_acc_list = []
                 model.train()
@@ -104,6 +155,7 @@ def train_model(model_class, DatasetMNIST, dirty_mnist_answer, BATCH_SIZE, epoch
                                                                                                    
                 # epoch마다 valid 계산
                 valid_acc_list = []
+                valid_losses = []
                 model.eval()
                 with tqdm(valid_data_loader,total=valid_data_loader.__len__(), unit="batch") as valid_bar:
                     for batch_idx, batch_data in enumerate(valid_bar):
@@ -120,11 +172,17 @@ def train_model(model_class, DatasetMNIST, dirty_mnist_answer, BATCH_SIZE, epoch
                             batch_acc = (labels == preds).mean()
                             valid_acc_list.append(batch_acc)
 
+                        valid_losses.append(valid_loss.item())
                         valid_acc = np.mean(valid_acc_list)
                         valid_bar.set_postfix(valid_loss = valid_loss.item(), valid_acc = valid_acc)
                 
                 # Learning rate 조절
                 lr_scheduler.step()  
+                early_stopping(np.average(valid_losses), model)
+
+                if early_stopping.early_stop:
+                    print("Early stopping")
+                    break
 
                 # 모델 저장
                 if valid_acc_max < valid_acc:
