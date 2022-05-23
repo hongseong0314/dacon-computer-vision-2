@@ -16,11 +16,13 @@ class DatasetMNIST(torch.utils.data.Dataset):
                  dir_path,
                  meta_df,
                  mode='train',
+                 mix_up=False,
                  augmentations=None):
         
         self.dir_path = dir_path 
         self.meta_df = meta_df 
         self.mode = mode
+        self.mix = mix_up
         self.train_mode = transforms.Compose([
                         transforms.RandomRotation(180, expand=False),
                         transforms.ToTensor(),
@@ -39,6 +41,10 @@ class DatasetMNIST(torch.utils.data.Dataset):
         image = Image.open(self.dir_path + str(self.meta_df.iloc[index,0]).zfill(5) + '.png').convert('RGB')
 
         label = self.meta_df.iloc[index, 1:].values.astype('float')
+
+        if np.random.rand() >= 0.8 and self.mix == True:
+            image, label = self.mixup(image, label)
+
         sample = {'image': image, 'label': label}
 
         if self.mode == 'train':
@@ -49,6 +55,24 @@ class DatasetMNIST(torch.utils.data.Dataset):
 
         sample['label'] = torch.FloatTensor(sample['label'])
         return sample
+    
+    def mixup(self, image, label):
+        idxs = np.random.randint(1, len(self.meta_df), 3)
+        h, w = image.size
+        
+        images = [Image.open(self.dir_path + str(self.meta_df.iloc[index,0]).zfill(5) + '.png').convert('RGB') for index in idxs]
+        images.append(image)
+        labels = [self.meta_df.iloc[index, 1:].values.astype('float') for index in idxs]
+        labels.append(label)
+        
+        expand_img = np.zeros((h*2, w*2, 3), dtype=np.uint8)
+        expand_img[:h, :w, :] = np.array(images[0])
+        expand_img[:h, w:int(w*2), :] = np.array(images[1])
+        expand_img[h:int(h*2), 0:w, :] = np.array(images[2])
+        expand_img[h:int(h*2), w:int(w*2), :] = np.array(images[3])
+        
+        del images
+        return Image.fromarray(expand_img).resize((h,w)), np.clip(np.sum(np.array(labels), axis=0), 0, 1)
 
 class UnNormalize(object):
     def __init__(self, mean, std):
