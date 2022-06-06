@@ -1,6 +1,6 @@
 import sys
 import os
-
+sys.path.append('mnist_classes')
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -13,21 +13,20 @@ import torchvision.transforms as T
 
 from dataloader import DatasetMNIST, tensor2img
 from trainer import train_model
-from resnet50 import Resnet
 from efficientNet import mnistEfficient
 
 # device 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") 
+# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # path setup
 root = os.path.join(os.getcwd(), 'dirty_mnist')
 train_path = os.path.join(root, 'train')
-dirty_mnist_answer = pd.read_csv(os.path.join(root, "dirty_mnist_2nd_answer.csv"))
+dirty_mnist_answer = pd.read_csv("./dirty_mnist_2nd_answer.csv")
 
 BAGGING_NUM = 4
-BATCH_SIZE = 16
+BATCH_SIZE = 256
 flod_num = 4
-
+save_path = os.getcwd()
 # 모델을 학습하고, 최종 모델을 기반으로 테스트 데이터에 대한 예측 결과물을 저장하는 도구 함수이다
 def train_and_predict(cfg_dict):
     cfg = cfg_dict.copy()

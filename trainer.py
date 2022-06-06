@@ -1,5 +1,6 @@
 # trainer 함수
 from pickle import TRUE
+import re
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 import torch
@@ -67,6 +68,17 @@ def train_model(model_class, DatasetMNIST, dirty_mnist_answer, BATCH_SIZE, epoch
                 reshape_size = None, fold_num=4, CODER=None, 
                 bagging_num=1):
     # bagging_num 만큼 모델 학습을 반복 수행한다
+    def get_model(model=model_class, m=True, pretrained=False):
+        # multi-GPU일 경우, Data Parallelism
+        mdl = torch.nn.DataParallel(model()) if m else model()
+        if not pretrained:
+            return mdl
+        else:
+            print("load pretrained model here...")
+            # 기학습된 torch.load()로 모델을 불러온다
+            mdl.load_state_dict(torch.load(pretrained))
+            return mdl
+
     for b in range(bagging_num):
         print("bagging num : ", b)
 
@@ -76,6 +88,7 @@ def train_model(model_class, DatasetMNIST, dirty_mnist_answer, BATCH_SIZE, epoch
         
         previse_name = ''
         best_model_name = ''
+        valid_acc_max = 0
         for fold_index, (trn_idx, val_idx) in enumerate(kfold.split(dirty_mnist_answer),1):
             print(f'[fold: {fold_index}]')
             torch.cuda.empty_cache()
@@ -85,8 +98,8 @@ def train_model(model_class, DatasetMNIST, dirty_mnist_answer, BATCH_SIZE, epoch
             test_answer  = dirty_mnist_answer.iloc[val_idx]
 
             #Dataset 정의
-            train_dataset = DatasetMNIST("dirty_mnist/train/", train_answer, 'train', mix_up=True)
-            valid_dataset = DatasetMNIST("dirty_mnist/train/", test_answer, 'test')
+            train_dataset = DatasetMNIST("dirty_mnist/train/", train_answer, 'train', mix_up=False, sub_data=False)
+            valid_dataset = DatasetMNIST("dirty_mnist/train/", test_answer, 'test', mix_up=False, sub_data=False)
 
             #DataLoader 정의
             train_data_loader = DataLoader(
@@ -103,7 +116,7 @@ def train_model(model_class, DatasetMNIST, dirty_mnist_answer, BATCH_SIZE, epoch
             )
 
             # model setup
-            model = model_class()
+            model = get_model()
             model.to(device)
             optimizer = torch.optim.Adam(model.parameters(),lr = lr)
             # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
@@ -113,7 +126,6 @@ def train_model(model_class, DatasetMNIST, dirty_mnist_answer, BATCH_SIZE, epoch
                                                                             eta_min=0.001, last_epoch=-1)                                       
             criterion = torch.nn.MultiLabelSoftMarginLoss()
 
-            valid_acc_max = 0
 
             # train 시작
             early_stopping = EarlyStopping(patience=3, verbose = True)
