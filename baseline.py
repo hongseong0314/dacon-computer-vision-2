@@ -13,7 +13,7 @@ import torchvision.transforms as T
 
 from dataloader import DatasetMNIST, tensor2img
 from trainer import train_model
-from resnet50 import Resnet
+from model.resnet50 import Resnet
 
 # device 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") 
