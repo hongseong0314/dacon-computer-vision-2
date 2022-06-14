@@ -1,6 +1,7 @@
 import sys
 import os
 sys.path.append('mnist_classes')
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -13,10 +14,7 @@ import torchvision.transforms as T
 
 from dataloader import DatasetMNIST, tensor2img
 from trainer import train_model
-from efficientNet import mnistEfficient
-
-# device 
-# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+from model.efficientNet import mnistEfficient
 
 # path setup
 root = os.path.join(os.getcwd(), 'dirty_mnist')
@@ -60,5 +58,5 @@ def seed_everything(seed):
 
 if __name__ == '__main__':
     seed_everything(np.random.randint(1, 5000))
-    print("train resnet.........")
+    print("train efficientNet.........")
     train_and_predict(eff_config)

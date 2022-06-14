@@ -12,11 +12,11 @@ from glob import glob
 
 import torch
 import torchvision.transforms as T
+import ttach as tta
 from torch.utils.data import Dataset, DataLoader
 
-from dataloader import DatasetMNIST, tensor2img
-from trainer import train_model
-from effientNet   import mnistEfficient
+from dataloader import DatasetMNIST
+from model.efficientNet  import mnistEfficient
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -28,12 +28,21 @@ test_data_loader = DataLoader(
     test_dataset,
     batch_size = batch_size,
     shuffle = False,
-    num_workers = 3,
+    num_workers = 8,
     drop_last = False
 )
 
+tta_transforms = tta.Compose([tta.Rotate90(angles=[0, 90, 180, 270]),])
 
-def inference(model_class, m=False, path=None, score=None):
+def inference(model_class, thr=0.5, m=False, path=None, score=None, tta_chech=False):
+    """
+    model_class : 사용할 모델
+    thr : 임계값
+    m : 멀티 GPU사용
+    path : 모델 파라미터 저장 경로
+    score : greedy 앙상블 시 각 모델의 정확도 값
+    tta_chech : TTA 사용 유무
+    """
     def get_model(model=model_class, m=m, pretrained=False):
             # multi-GPU일 경우, Data Parallelism
         mdl = torch.nn.DataParallel(model()) if m else model()
@@ -47,19 +56,25 @@ def inference(model_class, m=False, path=None, score=None):
 
     model = get_model()
     model.to(device)
-
-    if not score.any():
+    
+    if not score:
         for e, m in enumerate(path):
             model.load_state_dict(torch.load(m))
+            model.eval()
             pred_scores = []
             
             for batch_idx, batch_data in enumerate(test_data_loader):
                 with torch.no_grad():
                     # 추론
-                    model.eval()
                     images = batch_data['image']
                     images = images.to(device)
-                    probs  = model(images)
+                    
+                    if tta_chech:
+                        tta_model = tta.ClassificationTTAWrapper(model, tta_transforms)
+                        probs  = tta_model(images)
+                    else:
+                        probs  = model(images)
+                        
                     probs = probs.cpu().detach().numpy()
                 pred_scores.append(probs)
 
@@ -73,7 +88,7 @@ def inference(model_class, m=False, path=None, score=None):
         final_pred /= len(path)
 
         # threshold     
-        return (final_pred >= 0.5) * 1
+        return (final_pred >= thr) * 1
     else:
         def softmax(x):
             return np.exp(x) / np.sum(np.exp(x))
@@ -81,15 +96,21 @@ def inference(model_class, m=False, path=None, score=None):
         model_acc_weight = softmax(score)
         for e, m in enumerate(path):
             model.load_state_dict(torch.load(m))
+            model.eval()
             pred_scores = []
          
             for batch_idx, batch_data in enumerate(test_data_loader):
                 with torch.no_grad():
                     # 추론
-                    model.eval()
                     images = batch_data['image']
                     images = images.to(device)
-                    probs  = model(images)
+                    
+                    if tta_chech:
+                        tta_model = tta.ClassificationTTAWrapper(model, tta_transforms)
+                        probs  = tta_model(images)
+                    else:
+                        probs  = model(images)
+
                     probs = probs.cpu().detach().numpy()
                 pred_scores.append(probs)
 
@@ -101,19 +122,19 @@ def inference(model_class, m=False, path=None, score=None):
             else:
                 final_pred += np.vstack(pred_scores) * model_acc_weight[e]
         
-        return (final_pred >= 0.5) * 1
+        return (final_pred >= thr) * 1
 
 
 if __name__ == '__main__':
-    model_weight = glob(os.path.join(os.getcwd(), 'model_ro_mix_up/*.pth'))
+    model_weight = glob(os.path.join(os.getcwd(), 'full/*.pth'))
+    print(f"bagging num : {len(model_weight)}")
 
-    score = np.array([0.8030923077, 0.8081230769, 0.8103230769, 0.8091846154])
+    # score = np.array([0.8030923077, 0.8081230769, 0.8103230769, 0.8091846154])
     
-    pred = inference(mnistEfficient, m=True, path=model_weight, score=score)
+    pred = inference(mnistEfficient, thr=0.499, m=True, path=model_weight, tta_chech=True)
     sample_submission = pd.read_csv("./sample_submission.csv")
     sample_submission.iloc[:,1:] = np.vstack(pred)
-    sample_submission.to_csv("effb0_greedy_bagging_4.csv", index = False)
-    sample_submission
+    sample_submission.to_csv("effb0_full.csv", index = False)
     
   
 

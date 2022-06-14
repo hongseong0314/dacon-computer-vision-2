@@ -35,6 +35,7 @@ class DatasetMNIST(torch.utils.data.Dataset):
         self.mix = mix_up
         self.sub_data = sub_data
         self.reverse = reverse
+        self.sub_data_df = pd.read_csv(r"./sub_data.csv")
         self.train_mode = transforms.Compose([
                         transforms.RandomRotation(180, expand=False),
                         transforms.ToTensor(),
@@ -55,9 +56,8 @@ class DatasetMNIST(torch.utils.data.Dataset):
         
         # subdata True시 30%로 가져오기
         if self.sub_data and np.random.rand() >= 0.7:
-            sub_df = pd.read_csv(r"./sub_data.csv")
-            image = Image.open(str(sub_df.iloc[index,0])).convert('RGB')
-            label = sub_df.iloc[index, 1:].values.astype('float')
+            image = Image.open(str(self.sub_data_df.iloc[index,0])).convert('RGB')
+            label = self.sub_data_df.iloc[index, 1:].values.astype('float')
         
         # mix up
         if np.random.rand() >= 0.8 and self.mix == True and self.mode=='train':

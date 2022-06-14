@@ -16,57 +16,20 @@ from tqdm import tqdm
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") 
 
-class EarlyStopping:
-    """주어진 patience 이후로 validation loss가 개선되지 않으면 학습을 조기 중지"""
-    def __init__(self, patience=3, verbose=False, delta=0, path='checkpoint.pt'):
-        """
-        Args:
-            patience (int): validation loss가 개선된 후 기다리는 기간
-                            Default: 7
-            verbose (bool): True일 경우 각 validation loss의 개선 사항 메세지 출력
-                            Default: False
-            delta (float): 개선되었다고 인정되는 monitered quantity의 최소 변화
-                            Default: 0
-            path (str): checkpoint저장 경로
-                            Default: 'checkpoint.pt'
-        """
-        self.patience = patience
-        self.verbose = verbose
-        self.counter = 0
-        self.best_score = None
-        self.early_stop = False
-        self.val_loss_min = np.Inf
-        self.delta = delta
-        self.path = path
-
-    def __call__(self, val_loss, model):
-
-        score = -val_loss
-
-        if self.best_score is None:
-            self.best_score = score
-            self.save_checkpoint(val_loss, model)
-        elif score < self.best_score + self.delta:
-            self.counter += 1
-            print(f'EarlyStopping counter: {self.counter} out of {self.patience}')
-            if self.counter >= self.patience:
-                self.early_stop = True
-        else:
-            self.best_score = score
-            self.save_checkpoint(val_loss, model)
-            self.counter = 0
-
-    def save_checkpoint(self, val_loss, model):
-        '''validation loss가 감소하면 모델을 저장한다.'''
-        if self.verbose:
-            print(f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
-        torch.save(model.state_dict(), self.path)
-        self.val_loss_min = val_loss
-
-
 def train_model(model_class, DatasetMNIST, dirty_mnist_answer, BATCH_SIZE, epochs, lr, is_1d = None, 
                 reshape_size = None, fold_num=4, CODER=None, 
                 bagging_num=1):
+    """
+    model_class : 사용할 모델
+    DatasetMNIST : 사용할 데이터로더
+    dirty_mnist_answer :데이터프레임
+    BATCH_SIZE : 배치사이즈
+    is_1d : 입력채널 1채널로 변환 여부
+    reshape_size = 이미지 사이즈 변경
+    fold_num : 교차검증 수
+    CODER : 사용한 모델이름
+    bagging_num : 앙상블 수
+    """
     # bagging_num 만큼 모델 학습을 반복 수행한다
     def get_model(model=model_class, m=True, pretrained=False):
         # multi-GPU일 경우, Data Parallelism
@@ -98,8 +61,8 @@ def train_model(model_class, DatasetMNIST, dirty_mnist_answer, BATCH_SIZE, epoch
             test_answer  = dirty_mnist_answer.iloc[val_idx]
 
             #Dataset 정의
-            train_dataset = DatasetMNIST("dirty_mnist/train/", train_answer, 'train', mix_up=False, sub_data=False)
-            valid_dataset = DatasetMNIST("dirty_mnist/train/", test_answer, 'test', mix_up=False, sub_data=False)
+            train_dataset = DatasetMNIST("dirty_mnist/train/", train_answer, mode='train', mix_up=True, reverse=True, sub_data=True)
+            valid_dataset = DatasetMNIST("dirty_mnist/train/", test_answer, mode='test', sub_data=False)
 
             #DataLoader 정의
             train_data_loader = DataLoader(
@@ -118,6 +81,12 @@ def train_model(model_class, DatasetMNIST, dirty_mnist_answer, BATCH_SIZE, epoch
             # model setup
             model = get_model()
             model.to(device)
+
+            # if fold_index == 1:
+            #     init_weight = model.state_dict()
+            # else:
+            #     model.load_state_dict(init_weight)
+
             optimizer = torch.optim.Adam(model.parameters(),lr = lr)
             # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
             #                                             step_size = 5,
@@ -196,9 +165,10 @@ def train_model(model_class, DatasetMNIST, dirty_mnist_answer, BATCH_SIZE, epoch
                 if valid_acc_max < valid_acc:
                     valid_acc_max = valid_acc
                     best_model = model
-                    create_directory("model")
+                    create_directory("weight")
+                    
                     # model_name_bagging_kfold_bestmodel_valid loss로 이름 지정
-                    best_model_name = "model/model_{}_{}_{}_{:.4f}.pth".format(CODER, b, fold_index, valid_acc_max)
+                    best_model_name = "weight/model_{}_{}_{}_{:.4f}.pth".format(CODER, b, fold_index, valid_acc_max)
                     torch.save(model.state_dict(), best_model_name)
                     
                     if os.path.isfile(previse_name):
@@ -213,6 +183,52 @@ def train_model(model_class, DatasetMNIST, dirty_mnist_answer, BATCH_SIZE, epoch
             # 폴드별로 가장 좋은 모델 저장
             #best_models.append(best_model)
 
+class EarlyStopping:
+    """주어진 patience 이후로 validation loss가 개선되지 않으면 학습을 조기 중지"""
+    def __init__(self, patience=3, verbose=False, delta=0, path='checkpoint.pt'):
+        """
+        Args:
+            patience (int): validation loss가 개선된 후 기다리는 기간
+                            Default: 7
+            verbose (bool): True일 경우 각 validation loss의 개선 사항 메세지 출력
+                            Default: False
+            delta (float): 개선되었다고 인정되는 monitered quantity의 최소 변화
+                            Default: 0
+            path (str): checkpoint저장 경로
+                            Default: 'checkpoint.pt'
+        """
+        self.patience = patience
+        self.verbose = verbose
+        self.counter = 0
+        self.best_score = None
+        self.early_stop = False
+        self.val_loss_min = np.Inf
+        self.delta = delta
+        self.path = path
+
+    def __call__(self, val_loss, model):
+
+        score = -val_loss
+
+        if self.best_score is None:
+            self.best_score = score
+            self.save_checkpoint(val_loss, model)
+        elif score < self.best_score + self.delta:
+            self.counter += 1
+            print(f'EarlyStopping counter: {self.counter} out of {self.patience}')
+            if self.counter >= self.patience:
+                self.early_stop = True
+        else:
+            self.best_score = score
+            self.save_checkpoint(val_loss, model)
+            self.counter = 0
+
+    def save_checkpoint(self, val_loss, model):
+        '''validation loss가 감소하면 모델을 저장한다.'''
+        if self.verbose:
+            print(f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
+        torch.save(model.state_dict(), self.path)
+        self.val_loss_min = val_loss
 
 def create_directory(dir):
     if not os.path.exists(dir):
